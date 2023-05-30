@@ -1,0 +1,123 @@
+using Microsoft.Xrm.Sdk;
+using Microsoft.Xrm.Sdk.Query;
+using System;
+using System.Linq;
+using System.ServiceModel;
+
+namespace firstProg
+{
+    public class updateofitems : IPlugin
+    {
+        public void Execute(IServiceProvider serviceProvider)
+        {
+            // Obtain the tracing service
+            ITracingService tracingService =
+            (ITracingService)serviceProvider.GetService(typeof(ITracingService));
+            // Obtain the execution context from the service provider.  
+            IPluginExecutionContext context = (IPluginExecutionContext)
+                serviceProvider.GetService(typeof(IPluginExecutionContext));
+            // The InputParameters collection contains all the data passed in the message request.  
+            // Obtain the target entity from the input parameters.  
+            /*Entity entity = (Entity)context.InputParameters["Target"];*/
+            IOrganizationServiceFactory serviceFactory =
+                (IOrganizationServiceFactory)serviceProvider.GetService(typeof(IOrganizationServiceFactory));
+            IOrganizationService service = serviceFactory.CreateOrganizationService(context.UserId);
+            if (context.InputParameters.Contains("Target") && context.InputParameters["Target"] is Entity)
+            {
+                Entity entity = (Entity)context.InputParameters["Target"];
+
+                try
+                {
+
+                    ColumnSet LookupTask = new ColumnSet(new string[] { "new_tasks" });
+                    Entity myEntityHavingLookup = service.Retrieve("new_item", entity.Id, LookupTask);
+                    var TaskId = ((EntityReference)(myEntityHavingLookup.Attributes["new_tasks"])).Id;
+
+
+                    var fetchforpending = @"<fetch version='1.0' output-format='xml-platform' mapping='logical' distinct='false'>
+                                                  <entity name='new_item'>
+                                                    <attribute name='new_itemid' />
+                                                    <order attribute='new_name' descending='false' />
+                                                    <filter type='and'>
+                                                      <condition attribute='new_status' operator='eq' value='0' />
+                                                    </filter>
+                                                    <link-entity name='new_task' from='new_taskid' to='new_tasks' link-type='inner' alias='ab'>
+                                                      <filter type='and'>
+                                                        <condition attribute='new_taskid' operator='eq' uiname='testimony' uitype='new_task' value='" + TaskId + @"' />
+                                                      </filter>
+                                                    </link-entity>
+                                                  </entity>
+                                                </fetch>";
+                    var fetchXmlExpression = new FetchExpression(fetchforpending);
+
+                    // Execute the FetchXML query and retrieve the result
+                    EntityCollection resulting = service.RetrieveMultiple(fetchXmlExpression);
+
+                    // Get the count of records
+                    int pendingRecordCount = resulting.Entities.Count;
+
+                    var fetchforInProgress = @"<fetch version='1.0' output-format='xml-platform' mapping='logical' distinct='false'>
+                                                  <entity name='new_item'>
+                                                    <attribute name='new_itemid' />
+                                                    <order attribute='new_name' descending='false' />
+                                                    <filter type='and'>
+                                                      <condition attribute='new_status' operator='eq' value='1' />
+                                                    </filter>
+                                                    <link-entity name='new_task' from='new_taskid' to='new_tasks' link-type='inner' alias='ab'>
+                                                      <filter type='and'>
+                                                        <condition attribute='new_taskid' operator='eq' uiname='testimony' uitype='new_task' value='" + TaskId + @"' />
+                                                      </filter>
+                                                    </link-entity>
+                                                  </entity>
+                                                </fetch>";
+                    var FetchXmlInProgress = new FetchExpression(fetchforInProgress);
+
+                    // Execute the FetchXML query and retrieve the result
+                    EntityCollection inProgress = service.RetrieveMultiple(FetchXmlInProgress);
+
+                    // Get the count of records
+                    int inProgressRecordCount = inProgress.Entities.Count;
+
+                    var fetchforCompleted = @"<fetch version='1.0' output-format='xml-platform' mapping='logical' distinct='false'>
+                                                  <entity name='new_item'>
+                                                    <attribute name='new_itemid' />
+                                                    <order attribute='new_name' descending='false' />
+                                                    <filter type='and'>
+                                                      <condition attribute='new_status' operator='eq' value='2' />
+                                                    </filter>
+                                                    <link-entity name='new_task' from='new_taskid' to='new_tasks' link-type='inner' alias='ab'>
+                                                      <filter type='and'>
+                                                        <condition attribute='new_taskid' operator='eq' uiname='testimony' uitype='new_task' value='" + TaskId + @"' />
+                                                      </filter>
+                                                    </link-entity>
+                                                  </entity>
+                                                </fetch>";
+                    var fetchXmlCompleted = new FetchExpression(fetchforCompleted);
+
+                    // Execute the FetchXML query and retrieve the result
+                    EntityCollection Completed = service.RetrieveMultiple(fetchXmlCompleted);
+
+                    // Get the count of records
+                    int completedRecordCount = Completed.Entities.Count;
+
+                    Entity itemtasks = new Entity("new_task",TaskId);
+
+                    itemtasks["new_pendingtask"] = pendingRecordCount;
+                    itemtasks["new_inprogresstask"] = inProgressRecordCount;
+                    itemtasks["new_completedtask"] = completedRecordCount;
+
+                    service.Update(itemtasks);
+                }
+                catch (FaultException<OrganizationServiceFault> ex)
+                {
+                    throw new InvalidPluginExecutionException("An error occurred in FollowUpPlugin.", ex);
+                }
+                catch (Exception ex)
+                {
+                    tracingService.Trace("FollowUpPlugin: {0}", ex.ToString());
+                    throw;
+                }
+            }
+        }
+    }
+}
