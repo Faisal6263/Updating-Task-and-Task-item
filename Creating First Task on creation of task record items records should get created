@@ -1,0 +1,74 @@
+using Microsoft.Xrm.Sdk;
+using Microsoft.Xrm.Sdk.Query;
+using System;
+using System.Linq;
+using System.ServiceModel;
+
+namespace firstProg
+{
+    public class CreatingItemsfromtasks : IPlugin
+    {
+        public void Execute(IServiceProvider serviceProvider)
+        {
+            // Obtain the tracing service
+            ITracingService tracingService =
+            (ITracingService)serviceProvider.GetService(typeof(ITracingService));
+            // Obtain the execution context from the service provider.  
+            IPluginExecutionContext context = (IPluginExecutionContext)
+                serviceProvider.GetService(typeof(IPluginExecutionContext));
+            // The InputParameters collection contains all the data passed in the message request.  
+            // Obtain the target entity from the input parameters.  
+            /*Entity entity = (Entity)context.InputParameters["Target"];*/
+            IOrganizationServiceFactory serviceFactory =
+                (IOrganizationServiceFactory)serviceProvider.GetService(typeof(IOrganizationServiceFactory));
+            IOrganizationService service = serviceFactory.CreateOrganizationService(context.UserId);
+            if (context.InputParameters.Contains("Target") && context.InputParameters["Target"] is Entity)
+            {
+                Entity entity = (Entity)context.InputParameters["Target"];
+
+                try
+                {
+                    double totalHours = (double)entity["new_totalhours"];
+
+                    int noOfDays = (int)entity["new_noofdays"];
+
+                    double result = totalHours / noOfDays;
+
+                    for (int i = 1; i <= noOfDays; i++)
+
+                    {
+
+                        Entity itemtasks = new Entity("new_item");
+
+                        string sequentialNumber = i.ToString("D2");
+
+                        itemtasks["new_name"] = entity["new_name"] + " " + sequentialNumber; ;
+
+                        itemtasks["new_hours"] = result;
+
+                        entity["new_taskitems"] = noOfDays;
+
+                        itemtasks["new_tasks"] = new EntityReference(entity.LogicalName, entity.Id);
+
+                        service.Create(itemtasks);
+                    }
+
+                    entity["new_pendingtask"] = noOfDays;
+                    entity["new_inprogresstask"] = 0;
+                    entity["new_completedtask"] = 0;
+                    service.Update(entity);
+
+                }
+                catch (FaultException<OrganizationServiceFault> ex)
+                {
+                    throw new InvalidPluginExecutionException("An error occurred in FollowUpPlugin.", ex);
+                }
+                catch (Exception ex)
+                {
+                    tracingService.Trace("FollowUpPlugin: {0}", ex.ToString());
+                    throw;
+                }
+            }
+        }
+    }
+}
